@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Swirly Lines with Bloom</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+    }
+    canvas {
+      display: block;
+    }
+  </style>
+</head>
+<body>
+<canvas id="myCanvas"></canvas>
+
+<script type="module">
+  import * as THREE from 'https://unpkg.com/three@latest/build/three.module.js';
+  import { OrbitControls } from 'https://unpkg.com/three@latest/examples/jsm/controls/OrbitControls.js';
+  import { EffectComposer } from 'https://unpkg.com/three@latest/examples/jsm/postprocessing/EffectComposer.js';
+  import { RenderPass } from 'https://unpkg.com/three@latest/examples/jsm/postprocessing/RenderPass.js';
+  import { UnrealBloomPass } from 'https://unpkg.com/three@latest/examples/jsm/postprocessing/UnrealBloomPass.js';
+
+  // ----------------------------------------------------
+  // 1) SCENE, CAMERA, RENDERER SETUP
+  // ----------------------------------------------------
+  const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('myCanvas'), antialias: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setPixelRatio(window.devicePixelRatio);
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x000000);
+
+  // A perspective camera
+  const camera = new THREE.PerspectiveCamera(
+    60,                               // FOV
+    window.innerWidth / window.innerHeight, // aspect ratio
+    0.1,                              // near plane
+    1000                              // far plane
+  );
+  camera.position.set(0, 0, 5);
+
+  // Orbit controls (to rotate/pan around with mouse)
+  const controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.05;
+
+  // Handle window resize
+  window.addEventListener('resize', onWindowResize, false);
+  function onWindowResize() {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    composer.setSize(window.innerWidth, window.innerHeight);
+  }
+
+  // ----------------------------------------------------
+  // 2) CREATE A DISTORTED "LINE" GEOMETRY
+  // ----------------------------------------------------
+  // We'll start with a simple plane geometry in wireframe mode.
+  // Then we'll animate the vertices to produce a wavy / swirling effect.
+  const planeGeometry = new THREE.PlaneGeometry(10, 10, 100, 100);
+  const planeMaterial = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    wireframe: true
+  });
+  const planeMesh = new THREE.Mesh(planeGeometry, planeMaterial);
+  scene.add(planeMesh);
+
+  // We'll distort the plane in the render loop (or you could use a custom ShaderMaterial).
+
+  // ----------------------------------------------------
+  // 3) BLOOM POST-PROCESSING SETUP
+  // ----------------------------------------------------
+  const renderPass = new RenderPass(scene, camera);
+  const bloomPass = new UnrealBloomPass(
+    new THREE.Vector2(window.innerWidth, window.innerHeight),
+    1.5, // strength
+    0.4, // radius
+    0.85 // threshold
+  );
+
+  // Composer combines multiple passes (render, bloom, etc.)
+  const composer = new EffectComposer(renderer);
+  composer.addPass(renderPass);
+  composer.addPass(bloomPass);
+
+  // ----------------------------------------------------
+  // 4) MOUSE TRACKING
+  // ----------------------------------------------------
+  const mouse = new THREE.Vector2(0, 0);
+  window.addEventListener('mousemove', (event) => {
+    // Convert mouse coords to [-1, 1] range
+    mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+    mouse.y = -((event.clientY / window.innerHeight) * 2 - 1);
+  });
+
+  // ----------------------------------------------------
+  // 5) ANIMATION LOOP
+  // ----------------------------------------------------
+  let clock = new THREE.Clock();
+
+  function animate() {
+    requestAnimationFrame(animate);
+
+    // Time
+    const elapsed = clock.getElapsedTime();
+
+    // Distort geometry vertices in a basic "swirl" or "wave" pattern
+    // We'll do a very rough swirl effect around the plane center
+    const positions = planeMesh.geometry.attributes.position;
+    for (let i = 0; i < positions.count; i++) {
+      const x = positions.getX(i);
+      const y = positions.getY(i);
+
+      // Example wave formula with a swirl offset
+      // This is just an example. Tweak to get a nicer swirl:
+      let distance = Math.sqrt(x * x + y * y);
+      let angle = distance * 2.0 + elapsed;
+
+      // Swirl offset in Z
+      let z = 0.2 * Math.sin(angle * 3.0);
+
+      // Optionally, distort based on mouse.x / mouse.y
+      // We'll use the mouse position to add an additional "bump" in the middle
+      const mouseDist = Math.hypot(x - mouse.x * 5, y - mouse.y * 5);
+      z += 0.3 * Math.exp(-mouseDist * 2.0) * Math.sin(elapsed * 5.0);
+
+      positions.setZ(i, z);
+    }
+    positions.needsUpdate = true;
+
+    // Increase bloom intensity near mouse (very rough example)
+    // The closer the mouse is to the center, the higher the bloom
+    const distFromCenter = Math.hypot(mouse.x, mouse.y);
+    bloomPass.strength = 2.0 - distFromCenter * 1.5; // adjust to taste
+
+    // Update controls
+    controls.update();
+
+    // Render with bloom pass
+    composer.render();
+  }
+
+  animate();
+</script>
+
+</body>
+</html>
